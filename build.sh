@@ -111,7 +111,7 @@ if [[ $(uname -m) == aarch64 ]]; then
         CC=${FEX_CC:-clang} CXX=${FEX_CXX:-clang++} cmake -S third_party/FEX -B out/fex -G Ninja \
             -DCMAKE_BUILD_TYPE=Release -DCMAKE_PROJECT_FEX_INCLUDE="$PWD/cpu/fex_project.cmake" \
             -DBUILD_TESTING=OFF -DBUILD_THUNKS=OFF -DBUILD_FEXCONFIG=OFF -DBUILD_STEAM_SUPPORT=OFF \
-            -DBUILD_FEX_LINUX_TESTS=OFF -DENABLE_ZYDIS=OFF -DTUNE_ARCH=armv8.2-a -DTUNE_CPU=generic >/dev/null
+            -DBUILD_FEX_LINUX_TESTS=OFF -DENABLE_ZYDIS=OFF -DTUNE_ARCH=armv8.2-a+lse+rcpc+dotprod+crypto -DTUNE_CPU=generic >/dev/null
     fi
     if ! ninja -C out/fex bbcpu > out/fex-build.log 2>&1; then
         grep -v '^\[' out/fex-build.log | tail -40 >&2

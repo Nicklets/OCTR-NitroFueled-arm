@@ -21,6 +21,10 @@ endif()
 # (BB_PGO: off, generate = instrumented build writing into BB_PGO_DIR, use = build with that
 # profile). Covers bbgpu and the static libraries linked into it. No -march: the same build
 # runs on the Steam Deck.
+# aarch64: what Snapdragon 845 and newer share, tuned for the Cortex-A710 generation.
+if (CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+    add_compile_options(-march=armv8.2-a+lse+rcpc+dotprod+crypto -mtune=cortex-a710)
+endif()
 option(BB_LTO "Link-time optimization of bbgpu" ON)
 set(BB_PGO "off" CACHE STRING "Profile-guided optimization: off, generate, use")
 set(BB_PGO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../pgo" CACHE PATH "Profile directory")
