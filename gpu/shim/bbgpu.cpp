@@ -352,10 +352,16 @@ extern "C" int bbgpu_handle_fault(void* ucontext, void* address) {
 }
 
 extern "C" void bbgpu_patch_image(unsigned char* image, uint64_t size) {
+#if defined(__x86_64__)
     BbGnmHooks::PatchImage(image, size);
     BbEngineProbe::PatchImage(image, size);
     BbNativeVk::PatchImage(image, size);
     BbGraphicsTab::PatchImage(image, size);
+#else
+    // These patch jumps to host code into the game: not ported to the guest CPU yet.
+    (void)image;
+    (void)size;
+#endif
 }
 
 extern "C" unsigned bbgpu_symbol_count(void) {
