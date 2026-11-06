@@ -656,6 +656,7 @@ static void fault(int sig, siginfo_t *info, void *context) {
     else
         snprintf(line, sizeof(line), "Fault (signal %d) at RIP %p, address %p\n", sig, (void *)rip, info->si_addr);
     { ssize_t written_=write(2, line, strlen(line)); (void)written_; }
+    int nowhere = 0;
 #ifdef GUEST_CPU_NATIVE
     ucontext_t *uc = context;
     /* Native code has frame pointers but no host unwind metadata. */
@@ -664,7 +665,7 @@ static void fault(int sig, siginfo_t *info, void *context) {
      * the unwinder cannot start from it. An indirect call leaves its return address at RSP; a
      * jump or return may leave something else, so the first stack slots that point into code
      * are reported as candidate call sites. */
-    const int nowhere = !rip || (site < 0 && rip - (uintptr_t)image >= 0x10000000 &&
+    nowhere = !rip || (site < 0 && rip - (uintptr_t)image >= 0x10000000 &&
                                  !(dladdr((void *)rip, &where) && where.dli_fname));
     if (nowhere) {
         uintptr_t rsp=(uintptr_t)uc->uc_mcontext.gregs[REG_RSP];
