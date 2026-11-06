@@ -1001,7 +1001,7 @@ bool PersistentSrtInfo::Deserialize(Serialization::Archive& ar) {
         ar.Advance(walker_func_size);
         // SacredFire: the shader prebuild reads recipe entries only to translate them again; their
         // walkers would fill the walker code buffer for nothing.
-        walker_func = Vulkan::g_prebuild_reading ? nullptr : RegisterWalkerCode(code, walker_func_size);
+        walker_func = Vulkan::g_prebuild_reading ? PFN_SrtWalker{} : RegisterWalkerCode(code, walker_func_size);
         if (!walker_func && !Vulkan::g_prebuild_reading) {
             return false;
         }
