@@ -5,9 +5,14 @@
  * registers untouched. */
 #ifndef BB_ISA_EMULATE_H
 #define BB_ISA_EMULATE_H
+#if defined(__x86_64__)
+#define ISA_ABI __attribute__((sysv_abi))
+#else
+#define ISA_ABI
+#endif
 #include <stdint.h>
 #ifndef ABI               /* same as runtime.h, which needs sigjmp_buf (_GNU_SOURCE) */
-#define ABI __attribute__((sysv_abi))
+#define ABI ISA_ABI
 #endif
 
 enum { ISA_MOVBE_LOAD = 1, ISA_MOVBE_STORE, ISA_LZCNT, ISA_TZCNT, ISA_ANDN, ISA_BEXTR, ISA_BLSI, ISA_BLSMSK, ISA_BLSR, ISA_VCVTPH2PS, ISA_VCVTPS2PH };
