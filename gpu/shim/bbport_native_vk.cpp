@@ -24,7 +24,7 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
-#include <x86intrin.h>
+#include "bbport_cpu.h"
 
 #include "video_core/renderer_vulkan/vk_instance.h" // first: sets up the Vulkan headers
 
@@ -293,9 +293,9 @@ std::atomic<u64> clears_to_engine{0}, copies_to_engine{0};
 double TscNs() {
     static const double ns = [] {
         const auto t0 = std::chrono::steady_clock::now();
-        const u64 c0 = __rdtsc();
+        const u64 c0 = BbCpu::Cycles();
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        const u64 c1 = __rdtsc();
+        const u64 c1 = BbCpu::Cycles();
         const auto t1 = std::chrono::steady_clock::now();
         return double(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count()) /
                double(std::max<u64>(1, c1 - c0));
@@ -306,10 +306,10 @@ double TscNs() {
 /// Adds the time since construction to a counter (ns).
 struct Timer {
     std::atomic<u64>& out;
-    u64 start = __rdtsc();
+    u64 start = BbCpu::Cycles();
     explicit Timer(std::atomic<u64>& o) : out(o) {}
     ~Timer() {
-        out.fetch_add(u64(double(__rdtsc() - start) * TscNs()), std::memory_order_relaxed);
+        out.fetch_add(u64(double(BbCpu::Cycles() - start) * TscNs()), std::memory_order_relaxed);
     }
 };
 /// What the open command buffer has bound (Gpu::StateEpoch): a draw sets only what changed.
@@ -346,12 +346,12 @@ constexpr const char* DrawSectionNames[SecCount] = {
     "| ring copies", "pass", "sets", "record"};
 std::atomic<u64> section_ns[SecCount]{};
 struct Lap {
-    u64 t = __rdtsc(); // section_ns counts ticks (the report converts: TscNs)
+    u64 t = BbCpu::Cycles(); // section_ns counts ticks (the report converts: TscNs)
     void Start() {
-        t = __rdtsc();
+        t = BbCpu::Cycles();
     }
     void operator()(DrawSection i) {
-        const u64 now = __rdtsc();
+        const u64 now = BbCpu::Cycles();
         section_ns[i].fetch_add(now - t, std::memory_order_relaxed);
         t = now;
     }

@@ -6,6 +6,7 @@
  * Every entry here is an explicit contract; unknown functions still stop. */
 #define _GNU_SOURCE
 #include "runtime.h"
+#include "guest_cpu.h"
 #include "gpu/bbgpu.h"
 #include "ctr_trophies.h"
 #include <stdio.h>
@@ -1565,7 +1566,8 @@ static ABI int32_t user_event_register(void *cb, void *arg) {
         ev.eventType = 0; /* SCE_USER_SERVICE_EVENT_TYPE_LOGIN */
         ev.userId = 1;
         runtime_net_trace("sceUserServiceRegisterEventCallback -> dispatching initial LOGIN for user 1");
-        s_user_event_cb(&ev, s_user_event_arg);
+        const uint64_t cb_args[2]={(uint64_t)(uintptr_t)&ev,(uint64_t)(uintptr_t)s_user_event_arg};
+        guest_cpu_call((uintptr_t)s_user_event_cb,2,cb_args);
     }
     return 0;
 }

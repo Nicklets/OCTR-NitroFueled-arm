@@ -21,6 +21,7 @@
  * measurement. SacredFire keeps one calibration per controller port (split screen). */
 #define _GNU_SOURCE
 #include "runtime.h"
+#include "guest_cpu.h"
 #include "gpu/bbgpu.h"
 #include <stdio.h>
 #include <stdlib.h>

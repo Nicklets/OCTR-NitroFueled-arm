@@ -23,6 +23,7 @@
 #endif
 #include <string>
 #include <fmt/format.h>
+#include "../../../src/guest_cpu.h"
 #include <unistd.h>
 #include "core/signals.h"
 #include "video_core/page_manager.h"
@@ -104,8 +105,13 @@ struct ImageFaultSite {
 };
 std::array<ImageFaultSite, 256> image_fault_sites;
 
-void NoteFaultSite(void* context, VAddr address) {
+/// Returns the faulting instruction: guest code's address, or the host's.
+u64 NoteFaultSite(void* context, VAddr address) {
+    GuestRegs regs{};
+    const int in_guest = guest_cpu_signal_regs(context, &regs);
+    const u64* g = regs.gpr;
     current_fault_rip = 0;
+    const u64 rip = in_guest == GUEST_CPU_IN_GUEST ? regs.rip : u64(guest_cpu_host_pc(context));
     // lab: a diagnostic (the "Write fault sites" lines), BB_FAULT_SITES=1: it reads the stack
     // through a system call at every fault, ~14% of the game's render thread while a menu video
     // rewrote watched texture pages
@@ -114,15 +120,19 @@ void NoteFaultSite(void* context, VAddr address) {
         return env && env[0] == '1';
     }();
     if (!on) {
-        return;
+        return rip;
     }
-    const u64 rip = u64(Common::GetRip(context));
     const bool guest_code = rip >= GuestImage && rip < GuestImageEnd;
     u64 caller = 0;
-    if (guest_code) {
+    if (in_guest == GUEST_CPU_IN_HOST_CALL) {
+        // Host code the game called: regs.rip is its return address into the game.
+        if (regs.rip >= GuestImage && regs.rip < GuestImageEnd) {
+            caller = regs.rip;
+        }
+    } else if (guest_code) {
         // The caller: [rbp + 8] when the guest code keeps frames (its memcpy-like leaves do not).
         u64 saved[2] = {};
-        iovec local{saved, sizeof(saved)}, remote{reinterpret_cast<void*>(Common::GetRbp(context)), sizeof(saved)};
+        iovec local{saved, sizeof(saved)}, remote{reinterpret_cast<void*>(g[GUEST_RBP]), sizeof(saved)};
         if (process_vm_readv(getpid(), &local, 1, &remote, 1, 0) == ssize_t(sizeof(saved)) &&
             saved[1] >= GuestImage && saved[1] < GuestImageEnd) {
             caller = saved[1];
@@ -132,7 +142,7 @@ void NoteFaultSite(void* context, VAddr address) {
         // address on the stack is its guest caller.
         std::array<u64, 64> stack{};
         iovec local{stack.data(), sizeof(stack)},
-            remote{reinterpret_cast<void*>(Common::GetRsp(context)), sizeof(stack)};
+            remote{reinterpret_cast<void*>(g[GUEST_RSP]), sizeof(stack)};
         const ssize_t got = process_vm_readv(getpid(), &local, 1, &remote, 1, 0);
         for (ssize_t i = 0; i < got / 8; ++i) {
             if (stack[i] >= GuestImage && stack[i] < GuestImageEnd) {
@@ -154,10 +164,11 @@ void NoteFaultSite(void* context, VAddr address) {
             site.caller.store(caller ? caller - GuestImage : 0, std::memory_order_relaxed);
             site.last_address.store(address, std::memory_order_relaxed);
             site.count.fetch_add(1, std::memory_order_relaxed);
-            return;
+            return rip;
         }
     }
     fault_sites_dropped.fetch_add(1, std::memory_order_relaxed);
+    return rip;
 }
 } // namespace
 
@@ -307,7 +318,7 @@ struct PageManager::Impl {
 
     static bool GuestFaultSignalHandler(void* context, void* fault_address) {
         const auto addr = reinterpret_cast<VAddr>(fault_address);
-        NoteFaultSite(context, addr);
+        const u64 rip = NoteFaultSite(context, addr);
         // bbport: the draw recording thread handles its faults inline too (vk_draw_pipe.h).
         const auto is_gpu_thread = IsGpuThread();
         if (is_gpu_thread) {
@@ -315,9 +326,8 @@ struct PageManager::Impl {
         }
         if (Common::IsWriteError(context)) {
             BbStats::Timer timer{BbStats::t_write_faults};
-            const bool handled = !rasterizer ? owner->on_write_fault(addr) : rasterizer->OnWriteFault(
-                addr, is_gpu_thread,
-                u64(Common::GetRip(context)));
+            const bool handled = !rasterizer ? owner->on_write_fault(addr)
+                                             : rasterizer->OnWriteFault(addr, is_gpu_thread, rip);
             current_fault_rip = 0;
             return handled;
         } else {

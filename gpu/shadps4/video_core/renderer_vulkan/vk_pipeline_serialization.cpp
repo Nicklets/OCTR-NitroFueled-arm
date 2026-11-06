@@ -985,7 +985,7 @@ void PersistentSrtInfo::Serialize(Serialization::Archive& ar) const {
 
     srt.Write(this, sizeof(*this));
     if (walker_func_size) {
-        srt.Write(reinterpret_cast<void*>(walker_func), walker_func_size);
+        srt.Write(static_cast<const u8*>(SrtWalkerCode(walker_func)), walker_func_size);
     }
 }
 
@@ -1002,6 +1002,9 @@ bool PersistentSrtInfo::Deserialize(Serialization::Archive& ar) {
         // SacredFire: the shader prebuild reads recipe entries only to translate them again; their
         // walkers would fill the walker code buffer for nothing.
         walker_func = Vulkan::g_prebuild_reading ? nullptr : RegisterWalkerCode(code, walker_func_size);
+        if (!walker_func && !Vulkan::g_prebuild_reading) {
+            return false;
+        }
     }
 
     return true;
