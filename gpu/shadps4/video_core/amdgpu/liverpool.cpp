@@ -662,6 +662,16 @@ void RunEventWriteEos(Vulkan::Rasterizer& rasterizer, const u8* data) {
                                   reinterpret_cast<VAddr>(eos.Address()), eos.DataDWord());
         return;
     }
+    // As EOP fences (RunEventWriteEop): the draw recording thread does not wait, the Vulkan
+    // recording thread signals after the copies queued before the fence, in order with them.
+    // Waiting here took half of the frame on phones, about 2 ms for each of 19 fences a frame.
+    if (event_eos.command == PM4CmdEventWriteEos::Command::SignalFence &&
+        Vulkan::DrawPipe::OnStageB() && !BbToggle::Disabled(BbToggle::RecorderFences)) {
+        rasterizer.ProcessDownloadImages();
+        const PM4CmdEventWriteEos eos = event_eos;
+        rasterizer.SignalAfterHostCopies([eos] { eos.SignalFence(&WriteEosLabel); });
+        return;
+    }
     // Copies deferred to the recording thread precede writes the guest sees.
     rasterizer.WaitHostCopies();
     rasterizer.WaitDeferredSignals();
