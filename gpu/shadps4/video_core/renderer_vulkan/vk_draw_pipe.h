@@ -115,7 +115,7 @@ public:
             if (spins < 4096) {
                 BbCpu::Pause();
             } else {
-                std::this_thread::yield();
+                BbCpu::Rest();
             }
         }
         const u64 waited = BbCpu::Cycles() - start;
@@ -144,7 +144,7 @@ public:
             if (spins < 4096) {
                 BbCpu::Pause();
             } else {
-                std::this_thread::yield();
+                BbCpu::Rest();
             }
         }
         const u64 waited = BbCpu::Cycles() - start;

@@ -4,7 +4,9 @@
 // intervals); its rate differs between hosts.
 #pragma once
 
+#include <chrono>
 #include <cstdint>
+#include <thread>
 
 #if defined(__x86_64__)
 #include <x86intrin.h>
@@ -29,6 +31,15 @@ inline void Pause() {
     __builtin_ia32_pause();
 #elif defined(__aarch64__)
     asm volatile("yield");
+#endif
+}
+
+/// A wait after spinning: on phones a sched_yield loop keeps a core busy and heats the SoC.
+inline void Rest() {
+#if defined(__aarch64__)
+    std::this_thread::sleep_for(std::chrono::microseconds(50));
+#else
+    std::this_thread::yield();
 #endif
 }
 

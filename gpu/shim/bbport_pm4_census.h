@@ -11,11 +11,18 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <mutex>
 #include <string>
 #include <vector>
 
 namespace BbPm4 {
+
+/// BB_PM4_LAB=1: the per-packet clocks below. A clock read per packet is measurable on Android.
+inline const bool lab_enabled = [] {
+    const char* env = std::getenv("BB_PM4_LAB");
+    return env && env[0] == '1';
+}();
 
 enum Queue { Graphics = 0, Compute = 1, ConstantEngine = 2, Queues = 3 };
 
@@ -34,6 +41,9 @@ inline thread_local Clock lap_clock;
 /// The time since the last lap goes to the packet that was running; `opcode` < 0 stops the clock
 /// (the queue ran out of packets: idle time is nobody's).
 inline void Lap(Queue q, int opcode) {
+    if (!lab_enabled) {
+        return;
+    }
     const auto now = std::chrono::steady_clock::now();
     if (lap_clock.queue >= 0) {
         nanos[lap_clock.queue][lap_clock.opcode].fetch_add(
@@ -101,6 +111,9 @@ inline thread_local int phase_now = -1;
 inline thread_local std::chrono::steady_clock::time_point phase_since{};
 
 inline void PhaseLap(Phase p) {
+    if (!lab_enabled) {
+        return;
+    }
     const auto now = std::chrono::steady_clock::now();
     if (phase_now >= 0) {
         phase_ns[phase_now].fetch_add(

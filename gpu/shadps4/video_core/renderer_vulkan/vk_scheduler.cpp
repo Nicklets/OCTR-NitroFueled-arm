@@ -411,7 +411,7 @@ void Scheduler::WaitDeferredSignals() {
     while (deferred_signals_done->load(std::memory_order_acquire) < issued) {
         // Helps the copy threads the signals wait for.
         BbCopy::WaitAsync();
-        std::this_thread::yield();
+        BbCpu::Rest();
     }
 }
 
@@ -488,7 +488,7 @@ void Scheduler::WaitHostCopies() {
         BbStats::host_copy_waits.fetch_add(1, std::memory_order_relaxed);
         KickRecording(true);
         while (host_copies_done.load(std::memory_order_acquire) < host_copies_issued) {
-            std::this_thread::yield();
+            BbCpu::Rest();
         }
     }
     BbStats::WaitTimer timer{BbStats::copy_threads_wait_ns};
