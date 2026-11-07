@@ -611,25 +611,6 @@ void RunWriteData(Vulkan::Rasterizer& rasterizer, const u8* data) {
                                   (header->type3.count.Value() - 2) * sizeof(u32))) {
         return;
     }
-    // A small write joins the fences deferred to the recording thread instead of waiting for
-    // them all: it was the frame's one stall left on stage B once EOS fences were deferred.
-    if (const u32 bytes = (header->type3.count.Value() - 2) * sizeof(u32);
-        bytes <= 32 && Vulkan::DrawPipe::OnStageB() &&
-        !BbToggle::Disabled(BbToggle::RecorderFences)) {
-        std::array<u32, 8> words{};
-        std::memcpy(words.data(), write_data->data, bytes);
-        const VAddr address = write_data->Address<VAddr>();
-        rasterizer.SignalAfterHostCopies([address, words, bytes] {
-            BbFreeCheck::Check(address, bytes, words.data(), BbFreeCheck::WriteData);
-            BbWriteLog::Note(address, words.data(), bytes, BbWriteLog::WriteData);
-            BbClobber::NoteWrite(address, words[0], bytes, BbClobber::WriteData);
-            std::memcpy(reinterpret_cast<void*>(address), words.data(), bytes);
-            if (auto* late = Core::Memory::Instance()->GetRasterizer()) {
-                late->NoteLateCommandWrite(address, words.data(), bytes);
-            }
-        });
-        return;
-    }
     // Copies deferred to the recording thread that read this range precede the write (the
     // command processor's writes do not wait for earlier draws: the game cannot take one for
     // a sign that the GPU is past them); fences deferred to it (RecorderFences) precede writes
