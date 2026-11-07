@@ -25,6 +25,7 @@ import hashlib
 import argparse
 import json
 import os
+import platform
 import re
 import struct
 import sys
@@ -75,8 +76,13 @@ OUTPUT_DOUBLE_SIGNATURE='01 c9 41 89 8e 40 05 00 00 45 8b 86 44 05 00 00 45 01 c
 
 
 def render_res(settings):
-    """The render_res setting, or None without one (older settings: patch_pro_1080p decides)."""
-    value=(settings or {}).get('render_res')
+    """The render_res setting, or None without one (older settings: patch_pro_1080p decides).
+    On aarch64 a 16:9 game without one renders at 720p: phone GPUs gain about a quarter over the
+    game's 1080p, and render_res= (empty) keeps the game's own size."""
+    s=settings or {}
+    value=s.get('render_res')
+    if value is None and platform.machine()=='aarch64' and s.get('patch_pro_1080p')!='1'             and s.get('aspect_ratio','16x9')=='16x9' and s.get('ultrawide')!='1':
+        return '720'
     return value if value in RENDER_RESOLUTIONS else None
 
 

@@ -14,6 +14,7 @@ knows only the CTR profile.
 
 import json
 import os
+import platform
 import signal
 import subprocess
 import sys
@@ -104,6 +105,8 @@ RENDER_RESOLUTIONS = [("Game default (the PS4 Pro switches decide)", ""),
                       ("1440p (2560 x 1440, PS4 Pro)", "1440"),
                       ("1620p (2880 x 1620)", "1620"),
                       ("4K (3840 x 2160)", "2160")]
+# Without a render_res line an aarch64 build renders at 720p (scripts/patches.py render_res).
+DEFAULT_RENDER_RES = "720" if platform.machine() == "aarch64" else ""
 # bbport.ini aspect_ratio / aspect_output: the display shape and its screen sizes.
 # scripts/aspect_ratio.py prepares 16:10; widescreen.py keeps the corrected 21:9/32:9 layouts.
 ASPECT_RATIOS = [("16:9", "16x9"), ("16:10", "16x10"),
@@ -1299,7 +1302,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.present_row = combo_row(tr("Presentation"), None, PRESENT_MODES, self.settings["present_mode"])
         screen.add(self.present_row)
         self.render_res_row = combo_row(tr("Internal resolution"), tr("Also in the in-game menu"),
-                                        RENDER_RESOLUTIONS, self.ini.get("render_res", ""))
+                                        RENDER_RESOLUTIONS, self.ini.get("render_res", DEFAULT_RENDER_RES))
         self.render_res_row.set_tooltip_text(
             tr("The size the game draws its 3D scene at. Above 1080p it uses the game's PS4 Pro path and outputs 4K, "
                "which removes jagged edges even on a 1080p screen; 4K needs a strong GPU. 720p and 480p help weaker "
