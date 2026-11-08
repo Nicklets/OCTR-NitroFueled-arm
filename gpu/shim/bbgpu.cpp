@@ -4,6 +4,7 @@
 #include "bbport_graphics_tab.h"
 #include "bbport_native_vk.h"
 #include "bbport_native_memory.h"
+#include "bbport_guest_hooks.h"
 // bbport: glue between the C loader and the vendored shadPS4 video core.
 #include "bbport_overlay.h"
 #include "bbport_settings.h"
@@ -361,6 +362,7 @@ extern "C" void bbgpu_patch_image(unsigned char* image, uint64_t size) {
     // These patch jumps to host code into the game: not ported to the guest CPU yet.
     (void)image;
     (void)size;
+    BbGuestHooks::InstallNativeAudio();
 #endif
 }
 

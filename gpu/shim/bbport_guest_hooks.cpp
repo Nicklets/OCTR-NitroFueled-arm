@@ -6,6 +6,7 @@
 // which needs dma-buf guest memory: Linux only.
 namespace BbGuestHooks {
 void Install(RangeCallback) {}
+void InstallNativeAudio() {}
 } // namespace BbGuestHooks
 #else
 #include "bbport_fmod_dsp.h"
@@ -230,6 +231,10 @@ bool Patch(u64 address, const unsigned char* expected, std::size_t size) {
 }
 } // namespace
 
+void InstallNativeAudio() {
+    BbFmodDsp::Install(Patch);
+}
+
 void Install(RangeCallback on_gpu_range_allocated) {
     static std::atomic<bool> installed{false};
     if (installed.exchange(true)) {
@@ -267,7 +272,6 @@ void Install(RangeCallback on_gpu_range_allocated) {
                 HeapAllocReturns.size());
     std::printf("Guest hooks: GPU memory allocator %s\n", allocator ? "tells the GPU side of new ranges" : "not found");
     BbHeapSites::Install();
-    BbFmodDsp::Install(Patch);
     if (const char* env = std::getenv("BB_HEAP_SITES"); env && env[0] == '1') {
         Patch(ImageBase + ReleaseCheck, ReleaseCheckCode, sizeof(ReleaseCheckCode));
     }

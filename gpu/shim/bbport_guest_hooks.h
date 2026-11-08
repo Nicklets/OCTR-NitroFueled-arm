@@ -14,4 +14,6 @@ using RangeCallback = void (*)(std::uint64_t address, std::uint64_t size);
 
 /// Installs the hooks once (GPU side, after the game is loaded).
 void Install(RangeCallback on_gpu_range_allocated);
+/// The audio mixer's native loop (aarch64): independent of the memory model, once the image is mapped.
+void InstallNativeAudio();
 } // namespace BbGuestHooks
