@@ -8,6 +8,7 @@ namespace BbGuestHooks {
 void Install(RangeCallback) {}
 } // namespace BbGuestHooks
 #else
+#include "bbport_fmod_dsp.h"
 #include "bbport_heap_sites.h"
 #include "bbport_toggles.h"
 #include "../../src/guest_cpu.h"
@@ -83,6 +84,9 @@ struct sigaction previous_action {};
 /// One hook, at regs.rip (the hooked instruction): returns false when no hook is there. The
 /// instructions the patch replaced are carried out here; regs.rip is where the game resumes.
 bool Handle(GuestRegs& r) {
+    if (BbFmodDsp::Handle(r)) {
+        return true;
+    }
     u64* const g = r.gpr;
     const u64 rip = r.rip;
     if (rip == ImageBase + ReleaseCheck) {
@@ -263,6 +267,7 @@ void Install(RangeCallback on_gpu_range_allocated) {
                 HeapAllocReturns.size());
     std::printf("Guest hooks: GPU memory allocator %s\n", allocator ? "tells the GPU side of new ranges" : "not found");
     BbHeapSites::Install();
+    BbFmodDsp::Install(Patch);
     if (const char* env = std::getenv("BB_HEAP_SITES"); env && env[0] == '1') {
         Patch(ImageBase + ReleaseCheck, ReleaseCheckCode, sizeof(ReleaseCheckCode));
     }
