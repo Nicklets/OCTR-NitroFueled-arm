@@ -9,6 +9,10 @@
 #include "video_core/texture_cache/image_view.h"
 
 #include <magic_enum/magic_enum.hpp>
+#include <cstdio>
+#include <mutex>
+#include <set>
+#include <utility>
 
 namespace VideoCore {
 
@@ -138,6 +142,21 @@ ImageView::ImageView(const Vulkan::Instance& instance, const ImageViewInfo& info
             break;
         default:
             break;
+        }
+    }
+
+    // bbport: with BB_UBWC_PROBE the image lists only its own format; note each view that
+    // reinterprets it, once per pair.
+    if (UbwcProbe() && !(aspect & (vk::ImageAspectFlagBits::eDepth |
+                                   vk::ImageAspectFlagBits::eStencil)) &&
+        format != image.info.pixel_format) {
+        static std::mutex mutex;
+        static std::set<std::pair<vk::Format, vk::Format>> seen;
+        std::scoped_lock lock{mutex};
+        if (seen.emplace(image.info.pixel_format, format).second) {
+            std::printf("UBWC probe: %s image viewed as %s%s\n",
+                        vk::to_string(image.info.pixel_format).c_str(),
+                        vk::to_string(format).c_str(), info.is_storage ? " (storage)" : "");
         }
     }
 

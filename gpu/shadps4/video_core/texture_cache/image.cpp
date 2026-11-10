@@ -4,6 +4,10 @@
 #include "bbport_toggles.h"
 #include <atomic>
 #include <cstdio>
+#include <cstdlib>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
 #include <ranges>
 #include "common/assert.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
@@ -20,6 +24,39 @@ namespace VideoCore {
 using namespace Vulkan;
 
 Common::IncrementalIdProvider<u64> Image::global_image_uid{};
+
+bool UbwcProbe() {
+    static const bool probe = [] {
+        const char* env = std::getenv("BB_UBWC_PROBE");
+        return env && env[0] == '1';
+    }();
+    return probe;
+}
+
+namespace {
+/// bbport: Adreno 730/740 (Turnip, a7xx gen 1 and 2) leave UBWC compression off for a
+/// mutable-format color image unless a format list says which formats its views use.
+/// BB_UBWC_PROBE=1 (test): list only the image's own format, to measure what compression gains.
+const void* UbwcFormatList(vk::Format format, const ImageInfo& info) {
+    if (!UbwcProbe() || info.props.is_depth || info.props.is_block) {
+        return nullptr;
+    }
+    struct List {
+        VkFormat format;
+        VkImageFormatListCreateInfo info;
+    };
+    static std::mutex mutex;
+    static std::unordered_map<VkFormat, std::unique_ptr<List>> lists;
+    std::scoped_lock lock{mutex};
+    auto& list = lists[static_cast<VkFormat>(format)];
+    if (!list) {
+        list = std::make_unique<List>();
+        list->format = static_cast<VkFormat>(format);
+        list->info = {VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO, nullptr, 1, &list->format};
+    }
+    return &list->info;
+}
+} // namespace
 
 static vk::ImageUsageFlags ImageUsageFlags(const Vulkan::Instance& instance,
                                            const ImageInfo& info) {
@@ -245,6 +282,7 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
                             : vk::SampleCountFlagBits::e1;
 
     const vk::ImageCreateInfo image_ci = {
+        .pNext = UbwcFormatList(supported_format, info),
         .flags = flags,
         .imageType = ConvertImageType(info.type),
         .format = supported_format,

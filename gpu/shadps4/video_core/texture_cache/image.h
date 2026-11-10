@@ -25,6 +25,9 @@ VK_DEFINE_HANDLE(VmaAllocator)
 
 namespace VideoCore {
 
+/// bbport: BB_UBWC_PROBE=1 (test of Adreno UBWC compression on color images, see image.cpp).
+bool UbwcProbe();
+
 enum ImageFlagBits : u32 {
     Empty = 0,
     MaybeCpuDirty = 1 << 0, ///< The page this image is in was touched before the image address
