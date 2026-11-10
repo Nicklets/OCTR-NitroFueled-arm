@@ -4,10 +4,31 @@
 #include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
 
+#include <cstdlib>
+
 namespace Shader::Backend::SPIRV {
 
+namespace {
+bool EnvOn(const char* name) {
+    const char* env = std::getenv(name);
+    return env && env[0] == '1';
+}
+} // namespace
+
 Id Decorate(EmitContext& ctx, IR::Inst* inst, Id op) {
-    ctx.Decorate(op, spv::Decoration::NoContraction);
+    // bbport tests for mobile GPUs. Vertex stages keep NoContraction so positions stay identical
+    // between passes (depth prepass and main pass).
+    // BB_SPIRV_CONTRACT=1: fragment and compute shaders may fuse a multiply and an add (FMA).
+    // BB_SPIRV_FP16=1: fragment shader arithmetic is RelaxedPrecision (16-bit on Adreno/Turnip).
+    static const bool contract = EnvOn("BB_SPIRV_CONTRACT");
+    static const bool relaxed = EnvOn("BB_SPIRV_FP16");
+    const bool fragment = ctx.sw_stage == SwStage::Fragment;
+    if (!contract || !(fragment || ctx.sw_stage == SwStage::Compute)) {
+        ctx.Decorate(op, spv::Decoration::NoContraction);
+    }
+    if (relaxed && fragment) {
+        ctx.Decorate(op, spv::Decoration::RelaxedPrecision);
+    }
     return op;
 }
 
