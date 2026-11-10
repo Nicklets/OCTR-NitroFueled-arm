@@ -5,6 +5,8 @@
 #include <dlfcn.h>
 #endif
 #include <map>
+#include <chrono>
+#include <tuple>
 #include <unordered_set>
 #include <xxhash.h>
 #include "video_core/renderer_vulkan/ui_composition.h"
@@ -48,6 +50,10 @@
 #include "video_core/texture_cache/texture_cache.h"
 
 namespace Vulkan {
+
+namespace {
+void TraceSampledTarget(const VideoCore::Image& image, bool rendering);
+} // namespace
 
 static Shader::PushData MakeUserData(const AmdGpu::Regs& regs) {
     // TODO(roamic): Add support for multiple viewports and geometry shaders when ViewportIndex
@@ -3261,6 +3267,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
                     const auto new_layout = image.info.props.is_depth
                                                 ? vk::ImageLayout::eDepthStencilReadOnlyOptimal
                                                 : vk::ImageLayout::eShaderReadOnlyOptimal;
+                    TraceSampledTarget(image, scheduler.IsRendering());
                     barrier |= runtime.Transit(
                         &image, new_layout, vk::PipelineStageFlagBits2::eAllCommands,
                         vk::AccessFlagBits2::eShaderRead, desc.view_info.range);
@@ -3521,6 +3528,7 @@ bool Rasterizer::BindTexturesFromSet(const Shader::Info& stage, const PreparedSt
         const auto new_layout = image.info.props.is_depth
                                     ? vk::ImageLayout::eDepthStencilReadOnlyOptimal
                                     : vk::ImageLayout::eShaderReadOnlyOptimal;
+        TraceSampledTarget(image, scheduler.IsRendering());
         barrier |= runtime.Transit(&image, new_layout, vk::PipelineStageFlagBits2::eAllCommands,
                                    vk::AccessFlagBits2::eShaderRead, entry.range);
         image_infos.emplace_back(VK_NULL_HANDLE, entry.view, image.backing->state.layout);
@@ -3528,6 +3536,42 @@ bool Rasterizer::BindTexturesFromSet(const Shader::Info& stage, const PreparedSt
     (void)first_image_idx;
     return true;
 }
+
+namespace {
+// bbport: BB_PASS_BREAK_TRACE=1 (diagnostics): images sampled while a render pass is open that
+// are still in a color attachment layout (sampling them closes the pass), summed every 5 s.
+void TraceSampledTarget(const VideoCore::Image& image, bool rendering) {
+    static const bool enabled = [] {
+        const char* env = std::getenv("BB_PASS_BREAK_TRACE");
+        return env && env[0] == '1';
+    }();
+    if (!enabled || !rendering ||
+        image.backing->state.layout != vk::ImageLayout::eColorAttachmentOptimal) {
+        return;
+    }
+    static std::map<std::tuple<u64, u32, u32, u32, u32>, u64> images;
+    static auto last = std::chrono::steady_clock::now();
+    ++images[{image.info.guest_address, image.info.size.width, image.info.size.height,
+              u32(image.info.pixel_format), image.binding.is_target}];
+    const auto now = std::chrono::steady_clock::now();
+    if (now - last < std::chrono::seconds(5)) {
+        return;
+    }
+    std::vector<std::pair<u64, std::tuple<u64, u32, u32, u32, u32>>> top;
+    for (const auto& [key, count] : images) {
+        top.emplace_back(count, key);
+    }
+    std::ranges::sort(top, std::greater{});
+    for (size_t i = 0; i < std::min<size_t>(top.size(), 8); ++i) {
+        const auto& [address, width, height, format, target] = top[i].second;
+        std::printf("Sampled attachment: %llu x %#llx %ux%u format %u target %u\n",
+                    (unsigned long long)top[i].first, (unsigned long long)address, width, height,
+                    format, target);
+    }
+    images.clear();
+    last = now;
+}
+} // namespace
 
 RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {
     BB_SECTION(BeginRendering);
