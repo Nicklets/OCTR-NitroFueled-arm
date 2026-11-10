@@ -27,6 +27,8 @@ namespace VideoCore {
 
 /// bbport: BB_UBWC_PROBE=1 (test of Adreno UBWC compression on color images, see image.cpp).
 bool UbwcProbe();
+/// BB_SHADOW_HALF: 2 for the shadow atlas drawn at half size on the host, else 1.
+u32 ShadowDivisor(const ImageInfo& info);
 
 enum ImageFlagBits : u32 {
     Empty = 0,

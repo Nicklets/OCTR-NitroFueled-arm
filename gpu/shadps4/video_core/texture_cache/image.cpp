@@ -25,6 +25,22 @@ using namespace Vulkan;
 
 Common::IncrementalIdProvider<u64> Image::global_image_uid{};
 
+u32 ShadowDivisor(const ImageInfo& info) {
+    static const bool half = [] {
+        const char* env = std::getenv("BB_SHADOW_HALF");
+        return env && env[0] == '1';
+    }();
+    // bbport: BB_SHADOW_HALF=1 (test): the 2048x8192 D16 shadow atlas gets a host image at half
+    // its size; its passes scale viewports and scissors, shaders sample it with normalized
+    // coordinates.
+    if (!half || !info.props.is_depth || info.pixel_format != vk::Format::eD16Unorm ||
+        info.size.width != 2048 || info.size.height != 8192 || info.resources.levels != 1 ||
+        info.resources.layers != 1 || info.num_samples != 1) {
+        return 1;
+    }
+    return 2;
+}
+
 bool UbwcProbe() {
     static const bool probe = [] {
         const char* env = std::getenv("BB_UBWC_PROBE");
@@ -287,8 +303,8 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
         .imageType = ConvertImageType(info.type),
         .format = supported_format,
         .extent{
-            .width = info.size.width,
-            .height = info.size.height,
+            .width = info.size.width / ShadowDivisor(info),
+            .height = info.size.height / ShadowDivisor(info),
             .depth = info.size.depth,
         },
         .mipLevels = static_cast<u32>(info.resources.levels),

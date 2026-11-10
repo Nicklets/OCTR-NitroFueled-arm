@@ -3637,6 +3637,7 @@ RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {
 
 RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
     attachment_feedback_loop = false;
+    u32 shadow_divisor = 1;
     using VulkanUpscalerTarget = TemporalUpscaler::Target;
     VulkanUpscalerTarget redirect{};
     bool color_redirected = false, depth_redirected = false;
@@ -3873,8 +3874,9 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
                                              vk::AccessFlagBits2::eDepthStencilAttachmentRead,
                                          desc.view_info.range);
 
-        state.width = std::min<u32>(state.width, image.info.size.width);
-        state.height = std::min<u32>(state.height, image.info.size.height);
+        shadow_divisor = VideoCore::ShadowDivisor(image.info);
+        state.width = std::min<u32>(state.width, image.info.size.width / shadow_divisor);
+        state.height = std::min<u32>(state.height, image.info.size.height / shadow_divisor);
         state.num_layers = std::min<u32>(state.num_layers, image_view.info.range.extent.layers);
 
         auto& attachment = state.depth_stencil_attachment;
@@ -3917,6 +3919,9 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
     // bbport: a pass drawn into the upscaler's output-size images (UI, display pass): every
     // attachment must be redirected, viewports and scissors are scaled.
     target_scale = {1.0f, 1.0f};
+    if (shadow_divisor > 1 && !reduced && !color_redirected && !depth_redirected) {
+        target_scale = {1.0f / float(shadow_divisor), 1.0f / float(shadow_divisor)};
+    }
     if (color_redirected || depth_redirected) {
         u32 color_targets = 0;
         for (u32 cb = 0; cb < state.num_color_attachments; ++cb) {
