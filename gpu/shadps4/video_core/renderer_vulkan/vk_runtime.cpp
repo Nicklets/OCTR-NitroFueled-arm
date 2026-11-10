@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <boost/container/small_vector.hpp>
+#ifndef _WIN32
+#include <dlfcn.h>
+#endif
 #include <algorithm>
 #include <cstdio>
 #include <tuple>
@@ -280,7 +283,56 @@ bool Runtime::Transit(VideoCore::Image* image, vk::ImageLayout dst_layout,
     if (scene_targets) scene_targets->NativeAccess(*image, dst_access);
     const size_t prev_num_barriers = static_cast<size_t>(image_barriers.size());
     image->GetBarriers(image_barriers, dst_layout, dst_access, dst_stage, subres_range);
+    if (image_barriers.size() != prev_num_barriers && scheduler.IsRendering()) {
+        TraceTransitInPass(*image, image_barriers[prev_num_barriers].oldLayout, dst_layout,
+                           __builtin_return_address(0));
+    }
     return image_barriers.size() != prev_num_barriers;
+}
+
+// bbport: BB_PASS_BREAK_TRACE=1 (diagnostics): layout changes queued while a render pass is open
+// (the flush closes it), by caller, image and the open pass, summed every 5 s.
+void Runtime::TraceTransitInPass(const VideoCore::Image& image, vk::ImageLayout from,
+                                 vk::ImageLayout to, void* caller) {
+    static const bool enabled = [] {
+        const char* env = std::getenv("BB_PASS_BREAK_TRACE");
+        return env && env[0] == '1';
+    }();
+    if (!enabled) {
+        return;
+    }
+    using Key = std::tuple<void*, u32, u32, u32, u32, u32, u32, u32, u32>;
+    static std::map<Key, u64> kinds;
+    static auto last = std::chrono::steady_clock::now();
+    const auto& pass = scheduler.GetRenderState();
+    ++kinds[{caller, image.info.size.width, image.info.size.height, u32(image.info.pixel_format),
+             u32(from), u32(to), pass.width, pass.height, pass.num_color_attachments}];
+    const auto now = std::chrono::steady_clock::now();
+    if (now - last < std::chrono::seconds(5)) {
+        return;
+    }
+    std::vector<std::pair<u64, Key>> top;
+    for (const auto& [key, count] : kinds) {
+        top.emplace_back(count, key);
+    }
+    std::ranges::sort(top, std::greater{});
+    for (size_t i = 0; i < std::min<size_t>(top.size(), 12); ++i) {
+        const auto& [at, w, h, fmt, f, t, pw, ph, pc] = top[i].second;
+#ifdef _WIN32
+        const uintptr_t base = 0;
+#else
+        Dl_info info{};
+        dladdr(at, &info);
+        const uintptr_t base = reinterpret_cast<uintptr_t>(info.dli_fbase);
+#endif
+        std::printf("Transit in pass: %llu x +%#lx image %ux%u format %u layout %u->%u, pass "
+                    "%ux%u %u colors\n",
+                    (unsigned long long)top[i].first,
+                    (unsigned long)(reinterpret_cast<uintptr_t>(at) - base), w, h, fmt, f, t, pw,
+                    ph, pc);
+    }
+    kinds.clear();
+    last = now;
 }
 
 Runtime::TransferMark::TransferMark(Runtime& runtime, const char* what,
