@@ -86,7 +86,11 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
     memory->SetRasterizer(this);
 
     GpuProfiler::Init(instance, scheduler);
-    if (DrawPipeWanted()) {
+    const bool pipe_wanted = DrawPipeWanted();
+    std::printf("GPU: draw pipe %s (%u hardware threads available, %u installed)
+",
+                pipe_wanted ? "on" : "off", BbThreads::Available(), BbThreads::Installed());
+    if (pipe_wanted) {
         constant_ring = std::make_unique<ConstantRing>(instance, scheduler);
         draw_pipe = std::make_unique<DrawPipe>(&RunDrawPacket, this);
     }
@@ -733,7 +737,14 @@ bool Rasterizer::DrawPipeWanted() {
     }
     // Stage B spins while draws flow. Measured ahead with 16 threads (+19%) and with 4 cores /
     // 8 threads (taskset, Steam Deck-like: +18%).
+#if defined(__aarch64__) && !defined(_WIN32)
+    // Phones: the affinity mask follows Android's CPU sets, not the hardware (6 to 8 cores on
+    // a Galaxy S23+). Measured there with 6 cores in the mask: hub 14 FPS without the pipe,
+    // 23 to 28 FPS with it.
+    return BbThreads::Installed() >= 8;
+#else
     return BbThreads::Available() >= 8;
+#endif
 }
 
 bool Rasterizer::UseDrawPipe() const {

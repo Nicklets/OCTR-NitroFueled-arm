@@ -27,6 +27,11 @@ inline unsigned Available() {
     return std::max(1u, std::thread::hardware_concurrency());
 }
 
+/// Hardware threads in the machine, whatever the affinity mask allows.
+inline unsigned Installed() {
+    return std::max(1u, std::thread::hardware_concurrency());
+}
+
 /// The calling thread only runs when cores are otherwise idle (lowest Windows priority).
 inline void MakeBackground() {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_IDLE);
@@ -41,6 +46,14 @@ inline unsigned Available() {
         return std::max(1, CPU_COUNT(&set));
     }
     return std::max(1u, std::thread::hardware_concurrency());
+}
+
+/// Hardware threads in the machine, whatever the affinity mask allows right now. Android moves
+/// apps between CPU sets: a Galaxy S23+ gave this process 6, 7 or 8 of its 8 cores from one run
+/// to the next, so the mask at start says little about the cores the game gets.
+inline unsigned Installed() {
+    const long count = sysconf(_SC_NPROCESSORS_CONF);
+    return count > 0 ? static_cast<unsigned>(count) : Available();
 }
 
 /// The calling thread only runs on otherwise idle cores (falls back to the lowest nice level).
