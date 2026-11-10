@@ -2,6 +2,11 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <boost/container/small_vector.hpp>
+#include <algorithm>
+#include <cstdio>
+#include <tuple>
+#include <chrono>
+#include <map>
 #include "bbport_toggles.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
@@ -914,6 +919,48 @@ void Runtime::AccessBuffer(const VideoCore::Buffer* handle, u64 offset, u64 size
     memory_barrier.srcAccessMask |= src_access & WRITE_MASK;
 }
 
+// bbport: BB_PASS_BREAK_TRACE=1 (diagnostics): what the barriers that close an open render pass
+// wait for, summed every 5 s by source stage, source access, image count and first layouts.
+void Runtime::TraceBarrierBreak(const vk::DependencyInfo& dep_info) {
+    static const bool enabled = [] {
+        const char* env = std::getenv("BB_PASS_BREAK_TRACE");
+        return env && env[0] == '1';
+    }();
+    if (!enabled) {
+        return;
+    }
+    static std::map<std::tuple<u64, u64, u32, u32, u32>, u64> kinds;
+    static u64 total = 0;
+    static auto last = std::chrono::steady_clock::now();
+    const u64 stage = dep_info.memoryBarrierCount ? u64(memory_barrier.srcStageMask) : 0;
+    const u64 access = dep_info.memoryBarrierCount ? u64(memory_barrier.srcAccessMask) : 0;
+    const u32 images = dep_info.imageMemoryBarrierCount;
+    const u32 old_layout = images ? u32(image_barriers[0].oldLayout) : 0;
+    const u32 new_layout = images ? u32(image_barriers[0].newLayout) : 0;
+    ++kinds[{stage, access, images, old_layout, new_layout}];
+    ++total;
+    const auto now = std::chrono::steady_clock::now();
+    if (now - last < std::chrono::seconds(5)) {
+        return;
+    }
+    std::vector<std::pair<u64, std::tuple<u64, u64, u32, u32, u32>>> top;
+    for (const auto& [key, count] : kinds) {
+        top.emplace_back(count, key);
+    }
+    std::ranges::sort(top, std::greater{});
+    std::printf("Barriers inside render passes: %llu in %.0f s\n", (unsigned long long)total,
+                std::chrono::duration<double>(now - last).count());
+    for (size_t i = 0; i < std::min<size_t>(top.size(), 8); ++i) {
+        const auto& [stg, acc, img, ol, nl] = top[i].second;
+        std::printf("Barrier break: %llu x src stage %#llx access %#llx, %u images %u->%u\n",
+                    (unsigned long long)top[i].first, (unsigned long long)stg,
+                    (unsigned long long)acc, img, ol, nl);
+    }
+    kinds.clear();
+    total = 0;
+    last = now;
+}
+
 void Runtime::FlushBarriers() {
     BeforeImageAccess();
     vk::DependencyInfo dep_info{};
@@ -931,6 +978,9 @@ void Runtime::FlushBarriers() {
         return;
     }
 
+    if (scheduler.IsRendering()) {
+        TraceBarrierBreak(dep_info);
+    }
     scheduler.EndRendering();
     // bbport: a breadcrumb naming the images transitioned (a layout change writes them).
     Breadcrumbs::Crumb crumb{.kind = Breadcrumbs::Kind::Barrier, .name = "barriers"};

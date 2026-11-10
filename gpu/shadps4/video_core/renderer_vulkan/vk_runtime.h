@@ -98,6 +98,7 @@ public:
     void AccessBuffer(const VideoCore::Buffer* handle, u64 offset, u64 size,
                       vk::PipelineStageFlags2 src_stage, vk::AccessFlags2 src_access);
 
+    void TraceBarrierBreak(const vk::DependencyInfo& dep_info);
     bool IsBufferAccessed(const VideoCore::Buffer* handle, u64 offset, u64 size,
                           bool check_read_access = false);
 
