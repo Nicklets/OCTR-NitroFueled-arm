@@ -87,8 +87,7 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
 
     GpuProfiler::Init(instance, scheduler);
     const bool pipe_wanted = DrawPipeWanted();
-    std::printf("GPU: draw pipe %s (%u hardware threads available, %u installed)
-",
+    std::printf("GPU: draw pipe %s (%u hardware threads available, %u installed)\n",
                 pipe_wanted ? "on" : "off", BbThreads::Available(), BbThreads::Installed());
     if (pipe_wanted) {
         constant_ring = std::make_unique<ConstantRing>(instance, scheduler);
