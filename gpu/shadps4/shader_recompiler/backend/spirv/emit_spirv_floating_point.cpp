@@ -19,11 +19,18 @@ Id Decorate(EmitContext& ctx, IR::Inst* inst, Id op) {
     // bbport tests for mobile GPUs. Vertex stages keep NoContraction so positions stay identical
     // between passes (depth prepass and main pass).
     // BB_SPIRV_CONTRACT=1: fragment and compute shaders may fuse a multiply and an add (FMA).
+    // BB_SPIRV_CONTRACT=2: every stage, vertex shaders too (test: the Edge is vertex bound;
+    // watch for depth fighting between passes that draw the same geometry).
     // BB_SPIRV_FP16=1: fragment shader arithmetic is RelaxedPrecision (16-bit on Adreno/Turnip).
-    static const bool contract = EnvOn("BB_SPIRV_CONTRACT");
+    static const char contract = [] {
+        const char* env = std::getenv("BB_SPIRV_CONTRACT");
+        return env && (env[0] == '1' || env[0] == '2') ? env[0] : '0';
+    }();
     static const bool relaxed = EnvOn("BB_SPIRV_FP16");
     const bool fragment = ctx.sw_stage == SwStage::Fragment;
-    if (!contract || !(fragment || ctx.sw_stage == SwStage::Compute)) {
+    const bool fused = contract == '2' ||
+                       (contract == '1' && (fragment || ctx.sw_stage == SwStage::Compute));
+    if (!fused) {
         ctx.Decorate(op, spv::Decoration::NoContraction);
     }
     if (relaxed && fragment) {
