@@ -1700,6 +1700,11 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         grass.pending = false;
         GrassCount(grass_level, grass.skip);
         if (grass.skip) {
+            // The binds above are let go as after a draw (bound_images/bound_buffers would
+            // otherwise grow past their capacity); barriers they queued stay for the next draw.
+            const bool barrier = needs_barrier;
+            ResetBindings(false);
+            needs_barrier = barrier;
             return;
         }
     }
