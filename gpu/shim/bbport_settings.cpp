@@ -155,6 +155,10 @@ void Set(Values& v, const std::string& key, const std::string& value) {
             v.ultrawide_w = w;
             v.ultrawide_h = h;
         }
+    } else if (key == "grass_detail") {
+        for (int g = 0; g < GrassDetailCount; ++g) {
+            if (value == GrassDetailNames[g]) v.grass_detail = g;
+        }
     } else if (key == "model_lod") {
         v.model_lod = std::clamp(i, -2, 2);
     } else if (key == "live_resolution") {
@@ -276,6 +280,11 @@ void Load() {
     if (const char* temporal = std::getenv("BB_TEMPORAL")) {
         for (int t = 0; t < TemporalCount; ++t) {
             if (std::strcmp(temporal, TemporalNames[t]) == 0) v.temporal = t;
+        }
+    }
+    if (const char* grass = std::getenv("BB_GRASS")) {
+        for (int g = 0; g < GrassDetailCount; ++g) {
+            if (std::strcmp(grass, GrassDetailNames[g]) == 0) v.grass_detail = g;
         }
     }
     if (const char* full = std::getenv("BB_FULLSCREEN")) {
@@ -441,6 +450,7 @@ void Save() {
         put(GamePatches[g].key, flag(v.game_patches[g]));
     }
     put("model_lod", std::to_string(v.model_lod.load()));
+    put("grass_detail", GrassDetailNames[std::clamp(v.grass_detail.load(), 0, GrassDetailCount - 1)]);
     if (v.render_res >= 0) put("render_res", std::to_string(RenderResHeights[v.render_res]));
     if (v.ultrawide >= 0) put("ultrawide", flag(v.ultrawide == 1));
     put("ultrawide_ask", flag(v.ultrawide_ask));

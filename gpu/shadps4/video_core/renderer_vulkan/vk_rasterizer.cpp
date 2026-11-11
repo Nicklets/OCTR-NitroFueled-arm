@@ -1525,12 +1525,62 @@ bool SkippedDraw(const GraphicsPipeline* pipeline) {
     }
     return false;
 }
+// SacredFire: grass_detail (bbport.ini, BB_GRASS). The small grass tufts and ground plants are
+// one vertex/pixel shader pair, about 1000 draws a frame at the hub: on Adreno 730 they cost a
+// quarter of the scene's GPU time (draws are what limits it there, not pixels). Half leaves out
+// the patches whose mesh (index buffer address, offset, count) hashes odd: the same ones every
+// frame, so nothing flickers. BB_GRASS_DEBUG=1 prints, every 300 frames, a frame's grass draws,
+// distinct meshes and draws left out.
+bool GrassLeftOut(const GraphicsPipeline* pipeline, VAddr index_address, u32 index_offset,
+                  u32 num_indices) {
+    const int level = BbSettings::Get().grass_detail.load(std::memory_order_relaxed);
+    if (level >= BbSettings::GrassFull) {
+        return false;
+    }
+    const auto* vs = pipeline->GetStages()[u32(Shader::SwStage::Vertex)];
+    const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+    if (!vs || !ps || u32(vs->pgm_hash) != 0xefff14c8u || u32(ps->pgm_hash) != 0xb0a8e90bu) {
+        return false;
+    }
+    u64 key = index_address ^ (u64(index_offset) * 0x9e3779b97f4a7c15ull) ^ (u64(num_indices) << 40);
+    key = (key ^ (key >> 30)) * 0xbf58476d1ce4e5b9ull;
+    key = (key ^ (key >> 27)) * 0x94d049bb133111ebull;
+    key ^= key >> 31;
+    const bool out = level == BbSettings::GrassOff || (key & 1) != 0;
+    static const bool debug = [] {
+        const char* env = std::getenv("BB_GRASS_DEBUG");
+        return env && env[0] == '1';
+    }();
+    if (debug) {
+        static u32 frame = ~0u;
+        static u32 draws = 0, left = 0;
+        static std::unordered_set<u64> meshes;
+        const u32 now = BbStats::frame_number.load(std::memory_order_relaxed);
+        if (now != frame) {
+            if (frame != ~0u && frame % 300 == 0) {
+                std::printf("Grass: %u draws, %zu meshes, %u left out (level %d)\n", draws,
+                            meshes.size(), left, level);
+            }
+            frame = now;
+            draws = left = 0;
+            meshes.clear();
+        }
+        ++draws;
+        left += out ? 1 : 0;
+        meshes.insert(key);
+    }
+    return out;
+}
+
 } // namespace
 
 void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw* used_prepared,
                             bool is_indexed, u32 index_offset) {
     BB_SECTION(DrawRecord);
-    if (SkippedDraw(pipeline)) {
+    if (SkippedDraw(pipeline) ||
+        GrassLeftOut(pipeline,
+                     is_indexed ? Regs().index_base_address.Address<VAddr>() : VAddr{0},
+                     index_offset, Regs().num_indices)) {
         return;
     }
     buffer_cache.NewPacket();

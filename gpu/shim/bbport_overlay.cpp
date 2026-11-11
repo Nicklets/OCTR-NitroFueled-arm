@@ -1539,6 +1539,22 @@ void Menu() {
             "С патчем 60 FPS игра идёт так быстро, как позволяет ПК. 60 — темп, для которого она "
             "сделана; на экране 144 Гц без G-Sync/FreeSync 72 делит частоту ровно (240 — то же "
             "на экране 240 Гц). Сразу."));
+        {
+            const char* grass[] = {BbSettings::MenuText("Off", "Нет"),
+                                   BbSettings::MenuText("Half", "Половина"),
+                                   BbSettings::MenuText("Full", "Полная")};
+            int level = std::clamp(s.grass_detail.load(), 0, int(BbSettings::GrassDetailCount) - 1);
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10.0f);
+            if (ImGui::Combo(BbSettings::MenuText("Grass detail", "Детали травы"), &level, grass,
+                             int(BbSettings::GrassDetailCount))) {
+                Store(s.grass_detail, level, true);
+            }
+            Hint(BbSettings::MenuText(
+                "Small grass tufts and ground plants. Half or Off gives weaker GPUs (phones, "
+                "integrated graphics) a good deal more frames. Applies at once.",
+                "Мелкие пучки травы и растения на земле. Половина или Нет заметно поднимает FPS "
+                "на слабых GPU (телефоны, встроенная графика). Сразу."));
+        }
         Checkbox(BbSettings::MenuText("Compile shaders in the background (experimental)",
                                       "Компилировать шейдеры в фоне (экспериментально)"),
                  s.async_pipelines);

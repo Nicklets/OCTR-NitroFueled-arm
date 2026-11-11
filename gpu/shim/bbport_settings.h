@@ -65,6 +65,9 @@ inline constexpr int GamePatchCount = int(sizeof(GamePatches) / sizeof(GamePatch
 /// 1080p; scripts/patches.py and run.py apply it at start, docs/sacredfire/13-resolution.md).
 inline constexpr int RenderResHeights[] = {480, 720, 1080, 1440, 1620, 2160};
 inline constexpr int RenderResCount = 6;
+/// bbport.ini grass_detail (Values::grass_detail).
+enum GrassDetail : int { GrassOff = 0, GrassHalf = 1, GrassFull = 2, GrassDetailCount = 3 };
+inline constexpr const char* GrassDetailNames[GrassDetailCount] = {"off", "half", "full"};
 /// Display shape (aspect_ratio); the corrected wide modes also accept the older widescreen keys.
 enum AspectRatio : int { Aspect16x9 = 0, Aspect16x10, Aspect21x9, Aspect32x9, AspectRatioCount };
 inline constexpr const char* AspectRatioKeys[] = {"16x9", "16x10", "21x9", "32x9"};
@@ -158,6 +161,11 @@ struct Values {
     std::atomic<bool> effects[EffectCount]{};
     std::atomic<bool> game_patches[GamePatchCount]{}; ///< SacredFire: see GamePatches
     std::atomic<int> model_lod{0}; ///< -2 highest .. 2 lowest, 0 the game's
+    /// SacredFire: the small grass tufts and ground plants (bbport.ini grass_detail=full|half|off,
+    /// BB_GRASS overrides): on mobile GPUs they are ~1000 draws a frame that cost more than any
+    /// other part of the scene. Half leaves out every other patch (always the same ones), off all
+    /// of them. Applies at once.
+    std::atomic<int> grass_detail{GrassFull};
     std::atomic<int> render_res{-1}; ///< index into RenderResHeights, -1 when not set
     /// Ultrawide (bbport.ini ultrawide, ultrawide_size, ultrawide_ask): the game draws at the
     /// monitor's own size instead of 16:9 (scripts/patches.py render_plan; at start). -1: never
