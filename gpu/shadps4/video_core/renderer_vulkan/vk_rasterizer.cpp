@@ -1527,49 +1527,85 @@ bool SkippedDraw(const GraphicsPipeline* pipeline) {
 }
 // SacredFire: grass_detail (bbport.ini, BB_GRASS). The small grass tufts and ground plants are
 // one vertex/pixel shader pair, about 1000 draws a frame at the hub: on Adreno 730 they cost a
-// quarter of the scene's GPU time (draws are what limits it there, not pixels). Half leaves out
-// the patches whose mesh (index buffer address, offset, count) hashes odd: the same ones every
-// frame, so nothing flickers. BB_GRASS_DEBUG=1 prints, every 300 frames, a frame's grass draws,
-// distinct meshes and draws left out.
-bool GrassLeftOut(const GraphicsPipeline* pipeline, VAddr index_address, u32 index_offset,
-                  u32 num_indices) {
+// quarter of the scene's GPU time (draws are what limits it there, not pixels). They are ~13
+// meshes drawn many times, so Half picks by each draw's constants instead: a hash of
+// BB_GRASS_KEY=buffer:first:count floats of the vertex shader's buffers (default 0:0:16), which
+// holds where the tuft is and so stays the same every frame. BB_GRASS_DEBUG=1 prints, every 300
+// frames, a frame's grass draws and draws left out; =2 also the first floats of each buffer of
+// that frame's first three grass draws.
+int GrassLevel(const GraphicsPipeline* pipeline) {
     const int level = BbSettings::Get().grass_detail.load(std::memory_order_relaxed);
     if (level >= BbSettings::GrassFull) {
-        return false;
+        return -1;
     }
     const auto* vs = pipeline->GetStages()[u32(Shader::SwStage::Vertex)];
     const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
     if (!vs || !ps || u32(vs->pgm_hash) != 0xefff14c8u || u32(ps->pgm_hash) != 0xb0a8e90bu) {
-        return false;
+        return -1;
     }
-    u64 key = index_address ^ (u64(index_offset) * 0x9e3779b97f4a7c15ull) ^ (u64(num_indices) << 40);
-    key = (key ^ (key >> 30)) * 0xbf58476d1ce4e5b9ull;
-    key = (key ^ (key >> 27)) * 0x94d049bb133111ebull;
-    key ^= key >> 31;
-    const bool out = level == BbSettings::GrassOff || (key & 1) != 0;
-    static const bool debug = [] {
+    return level;
+}
+
+struct GrassState {
+    bool pending = false; ///< a Half grass draw is binding: BindBuffers looks at its constants
+    bool skip = false;
+    u32 frame = ~0u, draws = 0, left = 0;
+};
+GrassState grass;
+
+int GrassDebug() {
+    static const int debug = [] {
         const char* env = std::getenv("BB_GRASS_DEBUG");
-        return env && env[0] == '1';
+        return env ? std::atoi(env) : 0;
     }();
-    if (debug) {
-        static u32 frame = ~0u;
-        static u32 draws = 0, left = 0;
-        static std::unordered_set<u64> meshes;
-        const u32 now = BbStats::frame_number.load(std::memory_order_relaxed);
-        if (now != frame) {
-            if (frame != ~0u && frame % 300 == 0) {
-                std::printf("Grass: %u draws, %zu meshes, %u left out (level %d)\n", draws,
-                            meshes.size(), left, level);
-            }
-            frame = now;
-            draws = left = 0;
-            meshes.clear();
-        }
-        ++draws;
-        left += out ? 1 : 0;
-        meshes.insert(key);
+    return debug;
+}
+
+void GrassCount(int level, bool out) {
+    if (!GrassDebug()) {
+        return;
     }
-    return out;
+    const u32 now = BbStats::frame_number.load(std::memory_order_relaxed);
+    if (now != grass.frame) {
+        if (grass.frame != ~0u && grass.frame % 300 == 0) {
+            std::printf("Grass: %u draws, %u left out (level %d)\n", grass.draws, grass.left,
+                        level);
+        }
+        grass.frame = now;
+        grass.draws = grass.left = 0;
+    }
+    ++grass.draws;
+    grass.left += out ? 1 : 0;
+}
+
+/// A buffer of a Half grass draw's vertex shader: the key buffer decides the draw.
+void GrassObserve(u32 buffer_index, const void* data, u64 size) {
+    static const std::array<u32, 3> key = [] {
+        std::array<u32, 3> k{0, 0, 16};
+        if (const char* env = std::getenv("BB_GRASS_KEY")) {
+            std::sscanf(env, "%u:%u:%u", &k[0], &k[1], &k[2]);
+        }
+        return k;
+    }();
+    const auto* f = static_cast<const float*>(data);
+    if (GrassDebug() >= 2 && data && grass.frame % 300 == 0 && grass.draws < 3) {
+        std::string line = fmt::format("Grass draw {} buffer {} size {}:", grass.draws,
+                                       buffer_index, size);
+        for (u64 i = 0; i < std::min<u64>(size / 4, 24); ++i) {
+            line += fmt::format(" {:.4g}", f[i]);
+        }
+        std::printf("%s\n", line.c_str());
+    }
+    if (buffer_index != key[0] || !data || size < u64(key[1] + key[2]) * 4) {
+        return;
+    }
+    u64 h = 0xcbf29ce484222325ull;
+    for (u32 i = key[1]; i < key[1] + key[2]; ++i) {
+        // Rounded to 1/16 so a value recomputed with other rounding still hashes the same.
+        h = (h ^ u64(s64(std::lround(f[i] * 16.0f)))) * 0x100000001b3ull;
+    }
+    h ^= h >> 29;
+    grass.skip = (h & 1) != 0;
 }
 
 } // namespace
@@ -1577,12 +1613,16 @@ bool GrassLeftOut(const GraphicsPipeline* pipeline, VAddr index_address, u32 ind
 void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw* used_prepared,
                             bool is_indexed, u32 index_offset) {
     BB_SECTION(DrawRecord);
-    if (SkippedDraw(pipeline) ||
-        GrassLeftOut(pipeline,
-                     is_indexed ? Regs().index_base_address.Address<VAddr>() : VAddr{0},
-                     index_offset, Regs().num_indices)) {
+    if (SkippedDraw(pipeline)) {
         return;
     }
+    const int grass_level = GrassLevel(pipeline);
+    if (grass_level == BbSettings::GrassOff) {
+        GrassCount(grass_level, true);
+        return;
+    }
+    grass.pending = grass_level == BbSettings::GrassHalf;
+    grass.skip = false;
     buffer_cache.NewPacket();
     if (DrawPipe::OnStageB()) {
         FrameCapture::Poll();
@@ -1656,6 +1696,13 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     bind_prepared = nullptr; // indirect draws and dispatches bind without prepared sharps
     const bool inputs_resolved = draw_inputs.resolved;
     draw_inputs.pending = false;
+    if (grass.pending) {
+        grass.pending = false;
+        GrassCount(grass_level, grass.skip);
+        if (grass.skip) {
+            return;
+        }
+    }
     if (!bound) {
         return;
     }
@@ -2943,6 +2990,27 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
     for (u32 buffer_index = 0; buffer_index < stage.buffers.size(); ++buffer_index) {
         const auto& desc = stage.buffers[buffer_index];
         const RingBinding* ring = num_ring_stages ? FindRingBinding(stage, buffer_index) : nullptr;
+        if (grass.pending && stage.sw_stage == Shader::SwStage::Vertex) {
+            // SacredFire: grass_detail Half decides by this draw's constants (GrassObserve).
+            if (ring) {
+                GrassObserve(buffer_index,
+                             memory->IsValidGpuMapping(ring->address, 0)
+                                 ? reinterpret_cast<const void*>(ring->address) : nullptr,
+                             ring->size);
+            } else if (desc.buffer_type == Shader::BufferType::Flatbuf) {
+                GrassObserve(buffer_index, stage.FlatUserData().data(),
+                             stage.FlatUserData().size() * sizeof(u32));
+            } else if (!desc.IsSpecial()) {
+                const auto vsharp =
+                    prepared ? prepared->buffer_sharps[buffer_index] : desc.GetSharp(stage);
+                const bool valid = vsharp.base_address != 0 &&
+                                   memory->IsValidGpuMapping(vsharp.base_address, 0);
+                GrassObserve(buffer_index,
+                             valid ? reinterpret_cast<const void*>(vsharp.base_address) : nullptr,
+                             valid ? memory->ClampRangeSize(vsharp.base_address, vsharp.GetSize())
+                                   : 0);
+            }
+        }
         if (ring) {
             // Copied by the GPU command thread into the constant ring (read-only).
             if (!desc.IsSpecial()) {
