@@ -1489,9 +1489,50 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* pre
     DrawRecord(pipeline, used_prepared, is_indexed, index_offset);
 }
 
+namespace {
+// bbport: BB_SKIP_DRAWS=vs[:ps],... (test): draws whose vertex shader (and pixel shader, when
+// given) have these hashes are not drawn, to see what they are and what they cost.
+bool SkippedDraw(const GraphicsPipeline* pipeline) {
+    static const std::vector<std::pair<u32, u32>> list = [] {
+        std::vector<std::pair<u32, u32>> out;
+        const char* env = std::getenv("BB_SKIP_DRAWS");
+        for (const char* at = env; at && *at;) {
+            char* end = nullptr;
+            const u32 vs = u32(std::strtoull(at, &end, 16));
+            u32 ps = 0;
+            if (end && *end == ':') {
+                ps = u32(std::strtoull(end + 1, &end, 16));
+            }
+            if (vs) {
+                out.emplace_back(vs, ps);
+                std::printf("Skip draws: vs %08x ps %08x\n", vs, ps);
+            }
+            at = end && *end == ',' ? end + 1 : nullptr;
+        }
+        return out;
+    }();
+    if (list.empty()) {
+        return false;
+    }
+    const auto* vs = pipeline->GetStages()[u32(Shader::SwStage::Vertex)];
+    const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+    const u32 vs_hash = vs ? u32(vs->pgm_hash) : 0;
+    const u32 ps_hash = ps ? u32(ps->pgm_hash) : 0;
+    for (const auto& [v, p] : list) {
+        if (v == vs_hash && (p == 0 || p == ps_hash)) {
+            return true;
+        }
+    }
+    return false;
+}
+} // namespace
+
 void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw* used_prepared,
                             bool is_indexed, u32 index_offset) {
     BB_SECTION(DrawRecord);
+    if (SkippedDraw(pipeline)) {
+        return;
+    }
     buffer_cache.NewPacket();
     if (DrawPipe::OnStageB()) {
         FrameCapture::Poll();
