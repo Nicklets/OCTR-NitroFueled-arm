@@ -83,9 +83,14 @@ int PatchObject(dl_phdr_info* info, size_t, void* data) {
     }
     const ElfW(Addr) base = info->dlpi_addr;
     const ElfW(Dyn)* dyn = nullptr;
+    ElfW(Addr) relro_start = 0, relro_end = 0;
     for (int i = 0; i < info->dlpi_phnum; ++i) {
-        if (info->dlpi_phdr[i].p_type == PT_DYNAMIC) {
-            dyn = reinterpret_cast<const ElfW(Dyn)*>(base + info->dlpi_phdr[i].p_vaddr);
+        const ElfW(Phdr)& phdr = info->dlpi_phdr[i];
+        if (phdr.p_type == PT_DYNAMIC) {
+            dyn = reinterpret_cast<const ElfW(Dyn)*>(base + phdr.p_vaddr);
+        } else if (phdr.p_type == PT_GNU_RELRO) {
+            relro_start = base + phdr.p_vaddr;
+            relro_end = relro_start + phdr.p_memsz;
         }
     }
     if (!dyn) {
@@ -140,12 +145,17 @@ int PatchObject(dl_phdr_info* info, size_t, void* data) {
             void** slot = reinterpret_cast<void**>(base + rela.r_offset);
             void* start = reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(slot) &
                                                 ~std::uintptr_t(page - 1));
-            // The import table is read-only after loading (RELRO): writable for the store only.
+            // Imports bound at load time sit in the RELRO range (read-only after loading):
+            // writable for the store only. Lazily bound ones (.got.plt) stay writable: the
+            // loader writes there when it resolves another function on its first call.
             if (mprotect(start, page, PROT_READ | PROT_WRITE) != 0) {
                 continue;
             }
             *slot = reinterpret_cast<void*>(&Ioctl);
-            mprotect(start, page, PROT_READ);
+            const auto at = reinterpret_cast<ElfW(Addr)>(slot);
+            if (at >= relro_start && at < relro_end) {
+                mprotect(start, page, PROT_READ);
+            }
             ++patch->imports;
         }
     }
