@@ -164,8 +164,13 @@ struct Values {
     /// SacredFire: the small grass tufts and ground plants (bbport.ini grass_detail=full|half|off,
     /// BB_GRASS overrides): on mobile GPUs they are ~1000 draws a frame that cost more than any
     /// other part of the scene. Half leaves out every other patch (always the same ones), off all
-    /// of them. Applies at once.
+    /// of them. Applies at once. ARM builds (phones) start at Half: it keeps most of Off's gain
+    /// (Adreno 730: hub 18.6 -> 19.9 FPS, Crash Cove 27.3 -> 28.9) and only thins the tufts.
+#if defined(__aarch64__)
+    std::atomic<int> grass_detail{GrassHalf};
+#else
     std::atomic<int> grass_detail{GrassFull};
+#endif
     std::atomic<int> render_res{-1}; ///< index into RenderResHeights, -1 when not set
     /// Ultrawide (bbport.ini ultrawide, ultrawide_size, ultrawide_ask): the game draws at the
     /// monitor's own size instead of 16:9 (scripts/patches.py render_plan; at start). -1: never
