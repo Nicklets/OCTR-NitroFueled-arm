@@ -693,8 +693,7 @@ void VideoOutDriver::Flip(const Request& req) {
                 take(BbStats::vk_submit_lock, "submit lock");
                 take(BbStats::vk_present, "present");
                 take(BbStats::vk_present_lock, "present lock");
-                std::printf("
-");
+                std::printf("\n");
             }
             BbWaitTrace::Report(window);
             // Frame pacing: spread of the guest flip intervals (judder that the mean hides).
