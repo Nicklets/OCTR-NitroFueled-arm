@@ -8,6 +8,7 @@
 #include <fmt/ranges.h>
 
 #include "common/assert.h"
+#include "bbport_kgsl_poll.h"
 #include "common/debug.h"
 #include "common/types.h"
 #include "imgui/renderer/imgui_core.h"
@@ -823,6 +824,7 @@ bool Instance::CreateDevice() {
         return false;
     }
     device = std::move(dev);
+    BbKgslPoll::Install(); // Turnip on KGSL: polls that do not block (bbport_kgsl_poll.h)
 
     VULKAN_HPP_DEFAULT_DISPATCHER.init(*device);
     if (auto* dlss = DlssNgx::Get()) {

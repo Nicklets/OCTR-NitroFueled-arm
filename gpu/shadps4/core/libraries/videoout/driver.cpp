@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include "common/assert.h"
 #include "bbport_toggles.h"
+#include "bbport_kgsl_poll.h"
 #include "bbport_settings.h"
 #include "bbport_heap_sites.h"
 #include "bbport_wait_trace.h"
@@ -693,7 +694,10 @@ void VideoOutDriver::Flip(const Request& req) {
                 take(BbStats::vk_submit_lock, "submit lock");
                 take(BbStats::vk_present, "present");
                 take(BbStats::vk_present_lock, "present lock");
-                std::printf("\n");
+                std::uint64_t polls_done = 0;
+                const std::uint64_t polls = BbKgslPoll::TakePolls(&polls_done);
+                std::printf(" KGSL polls %.1f (%.1f done)\n", frames ? double(polls) / frames : 0.0,
+                            frames ? double(polls_done) / frames : 0.0);
             }
             BbWaitTrace::Report(window);
             // Frame pacing: spread of the guest flip intervals (judder that the mean hides).
