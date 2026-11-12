@@ -16,15 +16,26 @@ bool EnvOn(const char* name) {
 } // namespace
 
 Id Decorate(EmitContext& ctx, IR::Inst* inst, Id op) {
-    // bbport tests for mobile GPUs. Vertex stages keep NoContraction so positions stay identical
-    // between passes (depth prepass and main pass).
+    // bbport switches for mobile GPUs. Vertex stages keep NoContraction so positions stay
+    // identical between passes (depth prepass and main pass).
     // BB_SPIRV_CONTRACT=1: fragment and compute shaders may fuse a multiply and an add (FMA).
+    //   Default on ARM builds (Adreno 730 hub: scene passes 25.0 -> 24.3 ms, 18.7 -> 19.5 FPS,
+    //   no visible change); =0 turns it off.
     // BB_SPIRV_CONTRACT=2: every stage, vertex shaders too (test: the Edge is vertex bound;
     // watch for depth fighting between passes that draw the same geometry).
     // BB_SPIRV_FP16=1: fragment shader arithmetic is RelaxedPrecision (16-bit on Adreno/Turnip).
+    // Shaders come from the pipeline cache when it has them, so a switch set by env applies only
+    // with BB_PIPELINE_CACHE=0 or on a fresh cache.
     static const char contract = [] {
         const char* env = std::getenv("BB_SPIRV_CONTRACT");
-        return env && (env[0] == '1' || env[0] == '2') ? env[0] : '0';
+        if (env && (env[0] == '0' || env[0] == '1' || env[0] == '2')) {
+            return env[0];
+        }
+#if defined(__aarch64__)
+        return '1';
+#else
+        return '0';
+#endif
     }();
     static const bool relaxed = EnvOn("BB_SPIRV_FP16");
     const bool fragment = ctx.sw_stage == SwStage::Fragment;
