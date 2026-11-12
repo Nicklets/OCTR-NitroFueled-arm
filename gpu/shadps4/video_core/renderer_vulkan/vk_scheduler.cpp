@@ -1015,7 +1015,10 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         operation();
     }
     ImGui::Core::TextureManager::Submit();
-    auto submit_result = instance.GetGraphicsQueue().submit(submit_info, info.fence);
+    auto submit_result = [&] {
+        BbStats::VkCallTimer timer{BbStats::vk_submit};
+        return instance.GetGraphicsQueue().submit(submit_info, info.fence);
+    }();
     if (submit_result == vk::Result::eErrorDeviceLost) {
         Breadcrumbs::ReportDeviceLost("submit");
     }
@@ -1093,11 +1096,16 @@ void Scheduler::SubmitAsync(SubmitInfo& info) {
             .pSignalSemaphores = info.signal_semas.data(),
         };
         {
+            const auto lock_start = std::chrono::steady_clock::now();
             std::scoped_lock lk{submit_mutex};
+            BbStats::vk_submit_lock.Add(BbStats::VkCallSince(lock_start));
             for (auto& operation : info.before_submit) {
                 operation();
             }
-            const auto result = instance.GetGraphicsQueue().submit(submit_info, info.fence);
+            const auto result = [&] {
+                BbStats::VkCallTimer timer{BbStats::vk_submit};
+                return instance.GetGraphicsQueue().submit(submit_info, info.fence);
+            }();
             if (result == vk::Result::eErrorDeviceLost) {
                 Breadcrumbs::ReportDeviceLost("submit");
             }

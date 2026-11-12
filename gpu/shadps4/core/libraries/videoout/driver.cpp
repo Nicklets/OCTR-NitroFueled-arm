@@ -677,6 +677,25 @@ void VideoOutDriver::Flip(const Request& req) {
                 std::printf("Recording: %.1f submissions/frame, %.2f command buffers each\n",
                             frames ? double(submits) / frames : 0.0, double(segments) / submits);
             }
+            {
+                // bbport: Vulkan calls that may wait for the GPU (BbStats::VkCallStat).
+                const auto take = [](BbStats::VkCallStat& s, const char* name) {
+                    const u64 calls = s.calls.exchange(0), ns = s.ns.exchange(0),
+                              max_ns = s.max_ns.exchange(0);
+                    std::printf(" %s %.1fx %.2f ms (max %.2f);", name,
+                                frames ? double(calls) / frames : 0.0,
+                                frames ? ns / (1e6 * frames) : 0.0, max_ns / 1e6);
+                };
+                std::printf("Vulkan calls per frame:");
+                take(BbStats::vk_counter_query, "semaphore query");
+                take(BbStats::vk_wait_semaphores, "semaphore wait");
+                take(BbStats::vk_submit, "submit");
+                take(BbStats::vk_submit_lock, "submit lock");
+                take(BbStats::vk_present, "present");
+                take(BbStats::vk_present_lock, "present lock");
+                std::printf("
+");
+            }
             BbWaitTrace::Report(window);
             // Frame pacing: spread of the guest flip intervals (judder that the mean hides).
             if (intervals.size() > 2) {

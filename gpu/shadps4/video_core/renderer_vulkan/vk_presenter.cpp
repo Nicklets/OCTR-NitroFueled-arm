@@ -889,7 +889,9 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
 
     // Present to swapchain.
     {
+        const auto lock_start = std::chrono::steady_clock::now();
         std::scoped_lock submit_lock{Scheduler::submit_mutex};
+        BbStats::vk_present_lock.Add(BbStats::VkCallSince(lock_start));
         if (!swapchain.Present() && window.GetWidth() != 0 && window.GetHeight() != 0) {
             swapchain.Recreate(window.GetWidth(), window.GetHeight());
         }

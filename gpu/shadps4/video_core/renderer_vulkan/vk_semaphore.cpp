@@ -5,6 +5,7 @@
 #include "video_core/renderer_vulkan/vk_breadcrumbs.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_semaphore.h"
+#include "bbport_toggles.h"
 
 #include "common/assert.h"
 
@@ -34,7 +35,10 @@ void Semaphore::Refresh() {
     u64 counter{};
     do {
         this_tick = gpu_tick.load(std::memory_order_acquire);
-        auto [counter_result, cntr] = instance.GetDevice().getSemaphoreCounterValue(*semaphore);
+        auto [counter_result, cntr] = [this] {
+            BbStats::VkCallTimer timer{BbStats::vk_counter_query};
+            return instance.GetDevice().getSemaphoreCounterValue(*semaphore);
+        }();
         if (counter_result == vk::Result::eErrorDeviceLost) {
             Breadcrumbs::ReportDeviceLost("reading the GPU progress");
         }
@@ -68,7 +72,10 @@ void Semaphore::Wait(u64 tick) {
 
     // bbport: a lost device ends the wait with a report instead of a silent endless loop.
     while (true) {
-        const vk::Result result = instance.GetDevice().waitSemaphores(&wait_info, WAIT_TIMEOUT);
+        const vk::Result result = [&] {
+            BbStats::VkCallTimer timer{BbStats::vk_wait_semaphores};
+            return instance.GetDevice().waitSemaphores(&wait_info, WAIT_TIMEOUT);
+        }();
         if (result == vk::Result::eSuccess) {
             break;
         }

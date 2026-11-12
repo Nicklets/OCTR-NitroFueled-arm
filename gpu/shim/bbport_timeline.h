@@ -77,7 +77,7 @@ inline void Write(State& s) {
                          (unsigned long long)e.arg2);
         }
         std::fclose(f);
-        std::printf("Timeline: %llu events written to %s\n", (unsigned long long)Capacity, s.path);
+        std::printf("Timeline: %llu events written to %s\n", (unsigned long long)count, s.path);
     }
 }
 

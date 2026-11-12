@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <limits>
 #include "common/assert.h"
+#include "bbport_toggles.h"
 #include "common/logging/log.h"
 #include "core/emulator_settings.h"
 #include "imgui/renderer/imgui_core.h"
@@ -152,7 +153,10 @@ bool Swapchain::Present() {
         .pImageIndices = &image_index,
     };
 
-    auto result = instance.GetPresentQueue().presentKHR(present_info);
+    auto result = [&] {
+        BbStats::VkCallTimer timer{BbStats::vk_present};
+        return instance.GetPresentQueue().presentKHR(present_info);
+    }();
     if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR) {
         needs_recreation = true;
     } else {

@@ -212,6 +212,32 @@ struct WaitTimer {
                         std::memory_order_relaxed);
     }
 };
+/// bbport: time inside Vulkan calls that may block on the GPU (Turnip on KGSL passes a 0 ms
+/// timeout to the kernel, which KGSL takes as no timeout): calls, total and longest per site.
+struct VkCallStat {
+    std::atomic<std::uint64_t> calls{0}, ns{0}, max_ns{0};
+    void Add(std::uint64_t t) {
+        calls.fetch_add(1, std::memory_order_relaxed);
+        ns.fetch_add(t, std::memory_order_relaxed);
+        std::uint64_t m = max_ns.load(std::memory_order_relaxed);
+        while (t > m && !max_ns.compare_exchange_weak(m, t, std::memory_order_relaxed)) {
+        }
+    }
+};
+inline VkCallStat vk_counter_query, vk_wait_semaphores, vk_submit, vk_submit_lock, vk_present,
+    vk_present_lock;
+inline std::uint64_t VkCallSince(std::chrono::steady_clock::time_point start) {
+    return std::uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                             std::chrono::steady_clock::now() - start).count());
+}
+struct VkCallTimer {
+    VkCallStat& stat;
+    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+    ~VkCallTimer() {
+        stat.Add(std::uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                   std::chrono::steady_clock::now() - start).count()));
+    }
+};
 /// GPU thread rusage, refreshed after each graphics submission.
 inline std::atomic<std::uint64_t> gpu_sys_us{0}, gpu_user_us{0}, gpu_invol_switches{0},
     gpu_vol_switches{0}, gpu_minor_faults{0};
